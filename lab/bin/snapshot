@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""给长时间场景拍快照、比对：退出终端软件前后、过夜前后。
+
+用法：lab/bin/snapshot save <标签>
+      lab/bin/snapshot compare <标签1> <标签2>
+快照存在 $LAB_TMP/run/snapshot-<标签>.json：每个 lab agent 的实例编号、状态、启动时间、status 耗时；
+另外（白盒）栏位进程内存和事件文件大小。compare 要求标签1 里的 agent 在标签2 里都还在、实例编号不变。
+"""
+import os
+import statistics
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+
+def status_ms(name, n=3):
+    samples = []
+    for _ in range(n):
+        t0 = time.time()
+        L.corral("status", name)
+        samples.append((time.time() - t0) * 1000)
+    return round(statistics.median(samples))
+
+
+def rss_kb(pid):
+    p = subprocess.run(["ps", "-p", str(pid), "-o", "rss="], capture_output=True, text=True)
+    return int(p.stdout.strip()) if p.returncode == 0 and p.stdout.strip() else None
+
+
+def save(tag):
+    snap = {"t": time.time(), "agents": {}}
+    for item in L.list_agents():
+        if not L.is_lab_agent(item) or item.get("starting") or item.get("incompatible"):
+            continue
+        name = item["name"]
+        code, st = L.corral("status", name)
+        if code != 0:
+            continue
+        entry = {"instance": st["instance"], "state": st["state"], "started": st["started"], "kind": st["kind"],
+                 "status_ms": status_ms(name)}
+        try:
+            meta = L.pen_meta(name)
+            entry["pen_rss_kb"] = rss_kb(meta["pen_pid"])
+            entry["events_bytes"] = os.path.getsize(L.pen_file(name, "events"))
+        except (OSError, KeyError, ValueError):
+            pass
+        snap["agents"][name] = entry
+    path = os.path.join(L.RUN, f"snapshot-{tag}.json")
+    L.save_json(path, snap)
+    print(f"已保存 {path}")
+    for name, e in sorted(snap["agents"].items()):
+        print(f"  {name}  {e['kind']}  实例 {e['instance']}  {e['state']}  status {e['status_ms']}ms"
+              f"  栏位内存 {e.get('pen_rss_kb')}KB  事件文件 {e.get('events_bytes')}B")
+    return 0
+
+
+def compare(tag1, tag2):
+    a = L.load_json(os.path.join(L.RUN, f"snapshot-{tag1}.json"))
+    b = L.load_json(os.path.join(L.RUN, f"snapshot-{tag2}.json"))
+    if not a or not b:
+        sys.exit("快照不存在")
+    checks = L.Checks(f"快照比对 {tag1} → {tag2}（相隔 {(b['t'] - a['t']) / 3600:.1f} 小时）")
+    for name, e in sorted(a["agents"].items()):
+        f = b["agents"].get(name)
+        if not checks.ok(f"{name} 还在", f is not None):
+            continue
+        checks.ok(f"{name} 实例编号不变", f["instance"] == e["instance"], f"{e['instance']} → {f['instance']}")
+        checks.note(f"{name} 变化", f"状态 {e['state']}→{f['state']}；status {e['status_ms']}→{f['status_ms']}ms；"
+                    f"栏位内存 {e.get('pen_rss_kb')}→{f.get('pen_rss_kb')}KB；"
+                    f"事件文件 {e.get('events_bytes')}→{f.get('events_bytes')}B")
+    return checks.done()
+
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "save":
+        return save(sys.argv[2])
+    if len(sys.argv) == 4 and sys.argv[1] == "compare":
+        return compare(sys.argv[2], sys.argv[3])
+    sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

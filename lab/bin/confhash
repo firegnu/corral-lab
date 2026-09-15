@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""全局配置指纹：save 记下基线，check 比对。只存哈希和 Codex 信任记录的目录名，不复制文件内容。
+
+用法：lab/bin/confhash save [--force] | check
+- 基线存在 $LAB_TMP/confhash.json；save 时基线已存在就不覆盖（加 --force 才覆盖）
+- check：每个文件 未变 / 变了；~/.codex/config.toml 变了时，去掉新增的 [projects."…"] 段再比，
+  一致就报「只多了信任记录」（这是真 agent 在新目录点「信任」的预期结果，需要人手动删）
+退出码：0 都没变（或只多了信任记录）；1 有别的变化
+"""
+import hashlib
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+FILES = ("~/.claude/settings.json", "~/.codex/config.toml", "~/.codex/hooks.json",
+         "~/.claude/skills/corral/SKILL.md", "~/.agents/skills/corral/SKILL.md")
+CODEX_CONFIG = "~/.codex/config.toml"
+PROJECT_RE = re.compile(r'^\[projects\.("[^"]*"|\'[^\']*\')\]\s*$')
+BASELINE = os.path.join(L.TMP, "confhash.json")
+
+
+def read(path):
+    try:
+        with open(os.path.expanduser(path), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def digest(data):
+    return None if data is None else hashlib.sha256(data).hexdigest()
+
+
+def projects(data):
+    if data is None:
+        return []
+    return [m.group(1).strip("\"'") for m in map(PROJECT_RE.match, data.decode("utf-8", "replace").splitlines()) if m]
+
+
+def without_projects(data, drop):
+    """去掉 drop 里这些目录的 [projects."…"] 段（到下一个 [ 开头的行为止），连同段前的一个空行。"""
+    out, skipping = [], False
+    for line in data.decode("utf-8", "replace").splitlines(keepends=True):
+        m = PROJECT_RE.match(line.rstrip("\n"))
+        if m:
+            skipping = m.group(1).strip("\"'") in drop
+            if skipping and out and not out[-1].strip():
+                out.pop()
+        elif line.startswith("["):
+            skipping = False
+        if not skipping:
+            out.append(line)
+    return "".join(out).encode()
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in ("save", "check"):
+        sys.exit(__doc__)
+    if sys.argv[1] == "save":
+        if os.path.exists(BASELINE) and "--force" not in sys.argv:
+            print(f"基线已存在，不覆盖：{BASELINE}（要重记加 --force）")
+            return 0
+        base = {"files": {p: digest(read(p)) for p in FILES}, "codex_projects": projects(read(CODEX_CONFIG))}
+        L.save_json(BASELINE, base)
+        print(f"已记下基线：{BASELINE}")
+        for p, h in base["files"].items():
+            print(f"  {p}  {'(不存在)' if h is None else h[:12]}")
+        return 0
+
+    base = L.load_json(BASELINE)
+    if not base:
+        sys.exit(f"没有基线 {BASELINE}：先运行 lab/bin/confhash save")
+    changed = False
+    for p in FILES:
+        data = read(p)
+        if digest(data) == base["files"].get(p):
+            print(f"  未变  {p}")
+            continue
+        if p == CODEX_CONFIG and data is not None:
+            added = [d for d in projects(data) if d not in base["codex_projects"]]
+            if added and digest(without_projects(data, set(added))) == base["files"].get(p):
+                print(f"  只多了信任记录  {p}：")
+                for d in added:
+                    print(f"      [projects.\"{d}\"]   ← 请手动删掉这一段")
+                continue
+        print(f"  变了  {p}   ← 请人工核对")
+        changed = True
+    return 1 if changed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

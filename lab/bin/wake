@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""叫醒脚本：给一个 agent 送一句话。先记下（或用 --instance 指定）实例编号，编号变了就不送；
+不是 idle（7）就等这一轮结束再送；人刚在它窗口里操作过（8）就每隔 --every 秒再试。
+
+用法：lab/bin/wake <名字> <话> [--instance 编号] [--every 秒] [--give-up 秒] [--log 文件]
+退出码：0 送达；2 不在；3 实例编号变了；4 没确认送达（不重试）；5 放弃；1 其他错误
+"""
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+EXIT = {"delivered": 0, "gone": 2, "instance_changed": 3, "not_delivered": 4, "gave_up": 5}
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="wake")
+    ap.add_argument("name")
+    ap.add_argument("text")
+    ap.add_argument("--instance")
+    ap.add_argument("--every", type=float, default=5.0)
+    ap.add_argument("--give-up", type=float, default=1800.0)
+    ap.add_argument("--log")
+    args = ap.parse_args()
+    log = L.Log(args.log, name=args.name)
+
+    instance = args.instance
+    if not instance:
+        code, st = L.corral("status", args.name)
+        if code != 0:
+            log("gone" if code == 2 else "error", code=code)
+            return 2 if code == 2 else 1
+        instance = st["instance"]
+    log("armed", name=args.name, instance=instance, every=args.every)
+    result, _ = L.deliver(args.name, args.text, instance=instance, every=args.every, give_up=args.give_up, log=log)
+    return EXIT.get(result, 1)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

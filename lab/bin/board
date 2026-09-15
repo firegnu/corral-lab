@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""看板：每隔几秒用 corral ls / status 汇总所有 agent 的状态和「正在做什么」，
+下面列出各交接目录最新一条 watcher 记录。只读，不操作任何 agent。
+
+用法：lab/bin/board [--every 秒] [--once] [--prefix 名字前缀]
+"""
+import argparse
+import os
+import sys
+import time
+import unicodedata
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+COLUMNS = ("名字", "种类", "实例", "状态", "正在做", "无输出", "接入", "最近输入", "标题")
+
+
+def width(s):
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in s)
+
+
+def cut(s, n):
+    out = ""
+    for ch in s:
+        if width(out + ch) > n:
+            return out[:-1] + "…"
+        out += ch
+    return out
+
+
+def pad(s, n):
+    return s + " " * max(0, n - width(s))
+
+
+def secs(x):
+    return "" if x is None else (f"{int(x)}s" if x < 3600 else f"{x / 3600:.1f}h")
+
+
+def rows(prefix):
+    now = time.time()
+    out = []
+    for item in sorted(L.list_agents(), key=lambda i: i["name"]):
+        name = item["name"]
+        if prefix and not name.startswith(prefix):
+            continue
+        if item.get("starting"):
+            out.append((name, "", "", "(启动中)", "", "", "", "", ""))
+            continue
+        if item.get("incompatible"):
+            out.append((name, "", "", f"(不兼容 proto {item.get('proto')})", "", "", "", "", ""))
+            continue
+        code, st = L.corral("status", name)
+        if code != 0:
+            out.append((name, item.get("kind") or "", "", f"(退出码 {code})", "", "", "", "", ""))
+            continue
+        doing = ""
+        if st["state"] in ("working", "blocked"):
+            elapsed = secs(now - st["turn_started"]) if st.get("turn_started") else ""
+            doing = f"{st.get('last_tool') or '思考/输出'} {elapsed}".strip()
+        out.append((name, st.get("kind") or "", (st.get("instance") or "")[:6], st["state"], doing,
+                    secs(st.get("idle_for")), str(st.get("attached", "")), st.get("last_input_source") or "",
+                    cut(st.get("title") or "", 28)))
+    return out
+
+
+def watchers():
+    lines = []
+    if not os.path.isdir(L.RUN):
+        return lines
+    for prefix in sorted(os.listdir(L.RUN)):
+        events = L.read_jsonl(os.path.join(L.RUN, prefix, "watch.log"))
+        if events:
+            e = events[-1]
+            detail = e.get("reason") or e.get("hint") or ""
+            lines.append(f"  {prefix}  第 {e.get('round')} 轮  {L.clock(e['t'])}  {e['event']}  {detail}")
+    return lines
+
+
+def render(prefix):
+    table = [COLUMNS] + rows(prefix)
+    widths = [max(width(r[i]) for r in table) for i in range(len(COLUMNS))]
+    lines = [f"corral 看板  {L.clock()}"]
+    for r in table:
+        lines.append("  ".join(pad(c, w) for c, w in zip(r, widths)).rstrip())
+    if len(table) == 1:
+        lines.append("（没有 agent）")
+    w = watchers()
+    if w:
+        lines += ["", "交接 watcher 最新记录："] + w
+    return "\n".join(lines)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="board")
+    ap.add_argument("--every", type=float, default=3.0)
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--prefix")
+    args = ap.parse_args()
+    if args.once:
+        print(render(args.prefix))
+        return
+    try:
+        while True:
+            text = render(args.prefix)
+            sys.stdout.write("\x1b[H\x1b[2J" + text + "\n")
+            sys.stdout.flush()
+            time.sleep(args.every)
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()

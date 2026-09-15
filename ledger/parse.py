@@ -1,0 +1,35 @@
+"""读交易记录 CSV。列：date,account,amount,memo（memo 可省略），第一行可以是表头。"""
+import csv
+from dataclasses import dataclass
+
+HEADER = ["date", "account", "amount", "memo"]
+
+
+@dataclass
+class Transaction:
+    date: str
+    account: str
+    amount: float
+    memo: str = ""
+
+
+def parse_row(row):
+    if len(row) < 3:
+        raise ValueError(f"expected at least 3 columns, got {len(row)}: {row!r}")
+    date, account, amount = (cell.strip() for cell in row[:3])
+    memo = row[3].strip() if len(row) > 3 else ""
+    return Transaction(date, account, float(amount), memo)
+
+
+def parse_lines(lines):
+    transactions = []
+    for i, row in enumerate(csv.reader(lines)):
+        if i == 0 and [cell.strip().lower() for cell in row[:4]] == HEADER[:len(row[:4])]:
+            continue
+        transactions.append(parse_row(row))
+    return transactions
+
+
+def parse_file(path):
+    with open(path, newline="", encoding="utf-8") as f:
+        return parse_lines(f)

@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""把 request.md 交给评审方 B，并拉起后台 watch-deliver：等 B 交付后叫醒 A。由 A（或人）运行，立即返回。
+
+用法：lab/bin/handoff <前缀> [--a 名字] [--b 名字] [--b-kind codex|claude|claude-ask] [--b-cwd 目录]
+                     [--quiet 秒] [--start-timeout 秒] [--give-up 秒]
+
+- 交接目录 $LAB_TMP/run/<前缀>/：request.md（要先写好）、findings.md、findings-<轮>.md（上一轮归档）、
+  state.json、watch.log（每一步的判定）、watcher.out（后台脚本的输出）
+- A：默认取环境变量 CORRAL_NAME / CORRAL_INSTANCE（A 是 corral 启动的 agent 时自带）；人来运行时加 --a
+- B：默认 <前缀>/review（Codex，工作目录 $LAB_TMP/wt-<前缀>-review）
+  - 不在：用 corral start --prompt 启动，第一句就是交接的话
+  - 在：实例编号必须和上次记下的一致才送；忙（7）就等它这一轮结束再送，人在它窗口里操作（8）就过一会儿再送
+- 输出一行 JSON；失败时 ok=false，退出码非 0
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+
+def fail(error, message, **extra):
+    print(json.dumps(dict(extra, ok=False, error=error, message=message), ensure_ascii=False))
+    sys.exit(1)
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="handoff")
+    ap.add_argument("prefix")
+    ap.add_argument("--a")
+    ap.add_argument("--b")
+    ap.add_argument("--b-kind", default="codex", choices=("codex", "claude", "claude-ask"))
+    ap.add_argument("--b-cwd")
+    ap.add_argument("--quiet", type=float, default=30.0)
+    ap.add_argument("--start-timeout", type=float, default=60.0)
+    ap.add_argument("--give-up", type=float, default=900.0)
+    args = ap.parse_args()
+
+    run = L.run_dir(args.prefix)
+    request = os.path.join(run, "request.md")
+    findings = os.path.join(run, "findings.md")
+    state_path = os.path.join(run, "state.json")
+    b = args.b or f"{args.prefix}/review"
+    b_cwd = args.b_cwd or os.path.join(L.TMP, f"wt-{args.prefix}-review")
+    if not os.path.isfile(request) or os.path.getsize(request) == 0:
+        fail("no_request", f"{request} 不存在或是空的，先写请求")
+
+    if args.a:
+        code, st = L.corral("status", args.a)
+        if code != 0:
+            fail("a_not_found", f"A（{args.a}）不在：corral status 退出码 {code}")
+        a, a_inst = args.a, st["instance"]
+    else:
+        a, a_inst = os.environ.get("CORRAL_NAME"), os.environ.get("CORRAL_INSTANCE")
+        if not a:
+            fail("no_a", "不知道交付后叫醒谁：在 corral 启动的 agent 里运行，或加 --a <名字>")
+
+    state = L.load_json(state_path)
+    if L.pid_alive(state.get("watcher_pid"), "watch-deliver"):
+        fail("round_running", f"第 {state.get('round')} 轮的 watcher（pid {state['watcher_pid']}）还在等，等它结束再交下一轮")
+    known = state.get("b_instances", {}).get(b)
+    rnd = state.get("round", 0) + 1
+    log = L.Log(os.path.join(run, "watch.log"), prefix=args.prefix, round=rnd)
+
+    code, st = L.corral("status", b)
+    if code not in (0, 2):
+        fail("b_status_error", f"corral status {b} 退出码 {code}", out=st)
+    if code == 0 and st["instance"] != known:
+        why = "不是 handoff 启动的" if known is None else f"实例编号变了（记录 {known}，现在 {st['instance']}）"
+        log("b_changed_refused", name=b, expected=known, actual=st["instance"])
+        fail("b_changed", f"{b} {why}，不送。确认没问题的话先 corral stop {b} 再运行")
+    if code == 2 and not os.path.isdir(b_cwd):
+        fail("bad_b_cwd", f"B 的工作目录 {b_cwd} 不存在（先做准备步骤建 worktree）")
+
+    archived = None
+    if os.path.exists(findings):
+        archived = os.path.join(run, f"findings-{rnd - 1}.md")
+        if os.path.exists(archived):
+            archived = os.path.join(run, f"findings-{rnd - 1}-{int(time.time())}.md")
+        os.replace(findings, archived)
+
+    text = f"读 {request}，把结果写进 {findings}，最后一行只写 DONE。（第 {rnd} 轮）"
+    sent_at = time.time()
+    if code == 2:
+        scode, out = L.corral("start", b, "--cwd", b_cwd, "--prompt", text, "--", *L.agent_cmd(args.b_kind), timeout=90)
+        if scode != 0:
+            if archived:
+                os.replace(archived, findings)
+            fail("b_start_failed", f"corral start {b} 退出码 {scode}", out=out)
+        b_inst, action = out["instance"], "started"
+        log("b_started", name=b, instance=b_inst, kind=args.b_kind, cwd=b_cwd)
+    else:
+        result, out = L.deliver(b, text, instance=known, give_up=args.give_up, log=log, tag="send_b_")
+        if result != "delivered":
+            if archived:
+                os.replace(archived, findings)
+            fail("b_send_" + result, f"没能把第 {rnd} 轮送给 {b}：{result}", out=out)
+        b_inst, action = known, "reused"
+
+    state.update(round=rnd, a=a, a_instance=a_inst, b=b, sent_at=sent_at, text=text)
+    state.setdefault("b_instances", {})[b] = b_inst
+    with open(os.path.join(run, "watcher.out"), "a") as out_f:
+        watcher = subprocess.Popen(
+            [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "watch-deliver"),
+             "--prefix", args.prefix, "--round", str(rnd), "--a", a, "--a-instance", a_inst,
+             "--b", b, "--b-instance", b_inst, "--sent-at", str(sent_at), "--findings", findings,
+             "--quiet", str(args.quiet), "--start-timeout", str(args.start_timeout), "--give-up", str(args.give_up)],
+            stdin=subprocess.DEVNULL, stdout=out_f, stderr=subprocess.STDOUT, start_new_session=True)
+    state["watcher_pid"] = watcher.pid
+    L.save_json(state_path, state)
+    print(json.dumps({"ok": True, "prefix": args.prefix, "round": rnd, "a": a, "a_instance": a_inst,
+                      "b": b, "b_instance": b_inst, "b_action": action, "archived": archived,
+                      "request": request, "findings": findings, "sent_bytes": len(text.encode()),
+                      "watcher_pid": watcher.pid, "watch_log": os.path.join(run, "watch.log")},
+                     ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()

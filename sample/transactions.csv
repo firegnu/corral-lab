@@ -1,0 +1,14 @@
+date,account,amount,memo
+2026-08-01,salary,-5000.00,August salary
+2026-08-01,bank,5000.00,August salary
+2026-08-02,rent,1800.00,
+2026-08-02,bank,-1800.00,
+2026-08-05,food:groceries,86.40,weekly shop
+2026-08-05,cash,-86.40,
+2026-08-09,food:dining,0.10,tip
+2026-08-09,food:dining,0.20,tip
+2026-08-09,cash,-0.30,
+2026-09-01,salary,-5000.00,September salary
+2026-09-01,bank,5000.00,September salary
+2026-09-03,food:groceries,92.15,weekly shop
+2026-09-03,bank,-92.15,

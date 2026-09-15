@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""handoff 拉起的后台脚本：等 B 这一轮结束，判断有没有交付，再叫醒 A。每一步写进 watch.log。
+
+判定（watch.log 的 event）：
+  delivered          B idle，findings.md 是这一轮写的，最后一行是 DONE → 叫醒 A
+  undelivered        B idle，但 findings.md 不满足上面的条件 → 叫醒 A，说明没交付
+  blocked / unblocked  B 弹了权限框或提问框，等人处理；处理完继续等
+  interrupted        wait --quiet 返回 stopped-quiet（多半是人按了 Esc）→ 不叫醒 A，交给人
+  start_incomplete   超过 --start-timeout 还是 starting（多半卡在信任框）→ 只记一次，继续等
+  b_gone / b_instance_changed → 结束，不叫醒 A
+叫醒 A 时同样比对 A 的实例编号，忙就等，人在 A 的窗口里操作就过一会儿再试（事件前缀 wake_a_）。
+"""
+import argparse
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="watch-deliver")
+    for opt in ("--prefix", "--a", "--a-instance", "--b", "--b-instance", "--findings"):
+        ap.add_argument(opt, required=True)
+    ap.add_argument("--round", type=int, required=True)
+    ap.add_argument("--sent-at", type=float, required=True)
+    ap.add_argument("--quiet", type=float, default=30.0)
+    ap.add_argument("--start-timeout", type=float, default=60.0)
+    ap.add_argument("--give-up", type=float, default=900.0)
+    args = ap.parse_args()
+
+    run = L.run_dir(args.prefix)
+    log = L.Log(os.path.join(run, "watch.log"), prefix=args.prefix, round=args.round)
+    try:
+        watch(args, log)
+    finally:
+        state_path = os.path.join(run, "state.json")
+        state = L.load_json(state_path)
+        if state.get("watcher_pid") == os.getpid():
+            state["watcher_pid"] = None
+            L.save_json(state_path, state)
+
+
+def watch(args, log):
+    b, rnd = args.b, args.round
+    log("watching", b=b, b_instance=args.b_instance, a=args.a, quiet=args.quiet)
+    step = max(5.0, min(30.0, args.start_timeout / 2))
+    start_warned = False
+    while True:
+        code, out = L.corral("wait", b, "--timeout", str(step), "--quiet", str(args.quiet))
+        if code == 2:
+            log("b_gone", name=b, exited=out.get("exited"))
+            return
+        if code == 4:
+            if (out.get("state") == "starting" and not start_warned
+                    and time.time() - args.sent_at >= args.start_timeout):
+                log("start_incomplete", name=b, waited=round(time.time() - args.sent_at),
+                    hint=f"多半卡在对话框里：corral attach {b} 去看")
+                start_warned = True
+            continue
+        if code != 0:
+            log("wait_error", code=code, error=out.get("error"))
+            time.sleep(5)
+            continue
+        if out.get("instance") != args.b_instance:
+            log("b_instance_changed", expected=args.b_instance, actual=out.get("instance"))
+            return
+        result = out.get("result")
+        if result == "blocked":
+            log("blocked", name=b, last_tool=out.get("last_tool"), hint=f"等人处理：corral attach {b}")
+            while True:
+                time.sleep(2)
+                scode, st = L.corral("status", b)
+                if scode != 0 or st.get("state") != "blocked":
+                    break
+            log("unblocked", state=st.get("state") if scode == 0 else None)
+            continue
+        if result == "stopped-quiet":
+            log("interrupted", name=b, idle_for=out.get("idle_for"), last_event=out.get("last_event"),
+                hint="B 在 working 时长时间没有输出，多半被人打断；不叫醒 A")
+            return
+        if result != "idle":
+            log("wait_unknown", result=result)
+            return
+        ok, reason = L.findings_state(args.findings, args.sent_at)
+        if ok:
+            log("delivered", reason=reason, last_event=out.get("last_event"))
+            text = f"评审结果到了：{args.findings}（第 {rnd} 轮，{b} 写的）。读完按意见处理。"
+        else:
+            log("undelivered", reason=reason, last_event=out.get("last_event"))
+            text = (f"第 {rnd} 轮评审没有交付：{b} 已经停下，但{reason}。先不要改代码，把情况告诉人；"
+                    f"需要的话人会 corral attach {b} 去看。")
+        L.deliver(args.a, text, instance=args.a_instance, give_up=args.give_up, log=log, tag="wake_a_")
+        return
+
+
+if __name__ == "__main__":
+    main()

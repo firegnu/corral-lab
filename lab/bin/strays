@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""列出工作目录在 lab 目录里、名字却不是 lab 前缀的 agent（多半是 skill 起的临时 agent，名字由 agent 自己定）。
+
+用法：lab/bin/strays [--stop]
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+
+def main():
+    stop = "--stop" in sys.argv[1:]
+    found = [i for i in L.list_agents() if L.under_roots(i.get("cwd")) and not L.LAB_NAME_RE.match(i["name"])]
+    if not found:
+        print("没有")
+        return 0
+    for item in found:
+        line = f"  {item['name']}  {item.get('kind')}  {item.get('cwd')}"
+        if stop:
+            code, out = L.corral("stop", item["name"], "--timeout", "40")
+            line += f"  → stop 退出码 {code} {out.get('stopped_by') or out.get('error') or ''}"
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

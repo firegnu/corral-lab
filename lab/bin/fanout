@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""并发开 N 个临时 agent（lab/fan --unique），每个问题带不同暗号；等全部答完，
+检查每份回复含自己的暗号、不含别人的暗号，最后全部 stop（出错也 stop）。
+
+用法：lab/bin/fanout [N] [--kind codex|claude] [--timeout 秒]
+"""
+import argparse
+import os
+import secrets
+import sys
+import threading
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+FILES = ("ledger/parse.py", "ledger/balance.py", "ledger/report.py")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="fanout")
+    ap.add_argument("n", nargs="?", type=int, default=3)
+    ap.add_argument("--kind", default="codex", choices=("codex", "claude"))
+    ap.add_argument("--timeout", type=float, default=300.0)
+    args = ap.parse_args()
+    checks = L.Checks(f"并发 {args.n} 个临时 agent（{args.kind}）")
+
+    agents = []
+    try:
+        for i in range(args.n):
+            token = f"FAN{i + 1}-{secrets.token_hex(3).upper()}"
+            prompt = f"并发测试第 {i + 1} 个。请回复一行：先写「暗号 {token}」，再用一句话说明 {FILES[i % len(FILES)]} 是做什么的。"
+            code, out = L.corral("start", "lab/fan", "--unique", "--cwd", L.LAB, "--prompt", prompt, "--",
+                                 *L.agent_cmd(args.kind), timeout=90)
+            if not checks.ok(f"start 第 {i + 1} 个", code == 0, out.get("name") or out.get("error", "")):
+                return checks.done()
+            agents.append({"name": out["name"], "instance": out["instance"], "token": token})
+        checks.ok("名字互不相同", len({a["name"] for a in agents}) == len(agents), " ".join(a["name"] for a in agents))
+
+        def finish(a):
+            a["wait"] = L.wait_done(a["name"], total=args.timeout)
+            a["reply"] = L.corral("reply", a["name"])
+
+        threads = [threading.Thread(target=finish, args=(a,)) for a in agents]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        tokens = [a["token"] for a in agents]
+        for a in agents:
+            wcode, w = a["wait"]
+            rcode, r = a["reply"]
+            text = r.get("text", "") if rcode == 0 else ""
+            others = [t for t in tokens if t != a["token"] and t in text]
+            checks.ok(f"{a['name']} 答完", wcode == 0 and w.get("result") == "idle", f"result={w.get('result')}")
+            checks.ok(f"{a['name']} 回复含自己的暗号 {a['token']}", a["token"] in text, text[:80].replace("\n", " "))
+            checks.ok(f"{a['name']} 回复不含别人的暗号", not others, " ".join(others))
+    finally:
+        for a in agents:
+            code, out = L.corral("stop", a["name"], "--timeout", "40")
+            checks.ok(f"stop {a['name']}", code == 0, f"stopped_by={out.get('stopped_by')}")
+    return checks.done()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

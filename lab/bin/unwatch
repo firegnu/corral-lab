@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""停掉交接目录里还在跑的 watch-deliver。
+
+用法：lab/bin/unwatch <前缀> | --all
+"""
+import os
+import signal
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import lablib as L  # noqa: E402
+
+
+def main():
+    if len(sys.argv) != 2:
+        sys.exit(__doc__)
+    if sys.argv[1] == "--all":
+        prefixes = sorted(d for d in os.listdir(L.RUN) if os.path.isfile(os.path.join(L.RUN, d, "state.json"))) \
+            if os.path.isdir(L.RUN) else []
+    else:
+        prefixes = [sys.argv[1]]
+    for prefix in prefixes:
+        state_path = os.path.join(L.run_dir(prefix), "state.json")
+        state = L.load_json(state_path)
+        pid = state.get("watcher_pid")
+        if L.pid_alive(pid, "watch-deliver"):
+            os.kill(pid, signal.SIGTERM)
+            print(f"  {prefix}：已停 watcher（pid {pid}）")
+        else:
+            print(f"  {prefix}：没有在跑的 watcher")
+        if pid:
+            state["watcher_pid"] = None
+            L.save_json(state_path, state)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
