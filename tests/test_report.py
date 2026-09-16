@@ -66,7 +66,7 @@ class CliTest(unittest.TestCase):
 
     def test_month_on_sample_exact_amounts(self):
         lines = self.run_cli("month", SAMPLE, "2026-08").splitlines()
-        amounts = {line.split()[0]: line.split()[-1] for line in lines[1:]}
+        amounts = {account.strip(): amount for account, amount in (line.rsplit(maxsplit=1) for line in lines[1:])}
         self.assertEqual(amounts, {
             "bank": "3,200.00",
             "cash": "-86.70",
