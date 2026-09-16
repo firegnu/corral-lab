@@ -43,6 +43,24 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("food:dining", text)
         self.assertIn("food:groceries", text)
 
+    def test_month_on_sample_exact_amounts(self):
+        lines = self.run_cli("month", SAMPLE, "2026-08").splitlines()
+        amounts = {line.split()[0]: line.split()[-1] for line in lines[1:]}
+        self.assertEqual(amounts, {
+            "bank": "3,200.00",
+            "cash": "-86.70",
+            "food:dining": "0.30",
+            "food:groceries": "86.40",
+            "rent": "1,800.00",
+            "salary": "-5,000.00",
+            "TOTAL": "0.00",
+        })
+
+    def test_month_with_no_transactions(self):
+        text = self.run_cli("month", SAMPLE, "2026-01")
+        self.assertEqual(text.strip().splitlines()[-1].split()[-1], "0.00")
+        self.assertNotIn("food", text)
+
 
 if __name__ == "__main__":
     unittest.main()
