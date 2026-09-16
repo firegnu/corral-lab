@@ -683,10 +683,14 @@
 - **清理**：`clean.sh`（stop `lab-a/review-cc`；`lab-a/review` 留给 43）。
 
 **记录**
-- Claude：Esc → interrupted　秒；dev 被叫醒：☐ 否
-- Codex：Esc → undelivered　秒；last_event：　　dev 被叫醒：☐ 是
+- Claude（`lab-a/review-cc`）：Esc → interrupted **21.5** 秒；dev 被叫醒：☑ 否
+- Codex（`lab-a/review`）：Esc → undelivered **0.9** 秒；last_event：**Interrupt**　dev 被叫醒：☑ 是（Esc 后 1.5 秒）
 - 结果：☑ 通过　☐ 不通过
-- 备注：2026-09-16 人工确认通过。上面的秒数、last_event 当时没记，空着。
+- 备注：2026-09-16 第一次人工跑过并确认通过，但秒数没记；同日环境清掉后由 Claude 全自动重跑一遍取准确数据（Esc 用 `corral keys <名字> esc` 发，钩子把它记成人在打字，和手按走同一条路）。
+  - A 段：`idle_for` 20.076 触发判定，`last_event` 仍是 `PostToolUse`——**Claude 被 Esc 打断确实不产生任何事件**，只能靠 `wait --quiet` 的静默超时兜底，所以慢（21.5 秒）。判 `interrupted`，不叫醒 A。
+  - B 段：**Codex 有 `Interrupt` 事件**，所以 0.9 秒就判出来了，原因是「findings.md 不存在」，判 `undelivered` 并叫醒 dev 告知没交付。这也正是 41 想验而没验到的那条分支。
+  - 两段差 24 倍，是这一步最值得记的结论：**有事件的 agent 能立刻判定，没事件的只能等静默超时。**
+  - 顺带撞出一条：B 段第一次 handoff 被拒——`b_changed_refused`，因为那个 Codex 是手工起的、不在 handoff 的实例记录里。13 那个「实例变了不送」的守卫在真实误用场景下挡住了盲送，提示语也指明了处理办法（先 stop 再来）。
 
 ## 43 评审方正忙时交下一轮
 
@@ -706,10 +710,10 @@
 - **清理**：无。
 
 **记录**
-- 交给 B：not_idle → delivered 等了　秒
-- 叫醒 A 时遇到 7：☐ 是　☐ 否（没做可选）
+- 交给 B：not_idle → delivered 等了 **36** 秒（13:15:44 → 13:16:20）
+- 叫醒 A 时遇到 7：☑ 是　☐ 否（没做可选）——可选段也做了，`wake_a_not_idle` → 19 秒后 `wake_a_delivered`
 - 结果：☑ 通过　☐ 不通过
-- 备注：2026-09-16 人工确认通过。等待秒数当时没记，空着。
+- 备注：2026-09-16 第一次人工跑过并确认通过，秒数没记；同日由 Claude 全自动重跑取准确数据。完整时间线：`send_b_not_idle`(working) → 36s → `send_b_delivered` → `watching` → 18s 后 `delivered`（最后一行是 DONE）→ `wake_a_not_idle`(working) → 19s → `wake_a_delivered`。两处退出码 7 的重试都按预期等到对方空闲才送，没有丢话也没有重复送。B 是复用的（`b_action: reused`）。
 
 ## 44 评审方卡在信任框【故障演练】
 
