@@ -222,6 +222,7 @@
   - 同名重复 start 得到 5；stop 后立刻同名 start 不撞锁；kill -9 栏位后 `ls` 清残留、能重新 start；两次 Codex stop 都是 `keys` 正常退出。
   - Claude stop `stopped_by=SIGHUP`、`exit_code=-1`，符合设计。
   - Codex 收尾 13.1 秒，比 M8 实测的 7.6 秒长；02 那次更是超过 20 秒落到 SIGTERM。corral 等 20 秒升级信号，余量偏紧，见「发现的问题」。
+  - **2026-09-16 补跑（corral `48fb26a` 把等待放宽到 60 秒之后）**：这一步的 Codex 改成先跑三轮再 stop，实测 **25.6 秒、`stopped_by=keys`、`exit_code=0`**——正常收尾，不再被截断。16 项全 PASS。上面那条 13.1 秒是「只跑过一句」的会话，两者对得上：收尾时间随会话内容增长。
 
 ## 04 沙箱里被拒【故障演练】
 
@@ -963,4 +964,4 @@
 | 41 / 50 | 评审方只听 handoff 那句固定的话，request.md 里的额外要求（「findings 第一行照抄 token」「最后一行写 TODO」）会被忽略；把要求写得更硬才照做 | 在 request.md 里写一条和 handoff 那句话无关的要求 | agent | 不是 corral 的问题。lab 脚本这边：要验的东西得写进 handoff 送出的那句话，或者在 request.md 里写明「必须」 |
 | 99 | confhash 的基线存在 `/tmp/clab/confhash.json`，而 cleanup 第 6 步就把 `/tmp/clab` 删了，于是第 2 步手动删信任记录之后没法再用 confhash 复验 | 跑完 `lab/cleanup.py` 再 `lab/bin/confhash check` | lab 脚本 | 待改：基线存到 `/tmp/clab` 外面，或者把「删信任记录」放到删 `/tmp/clab` 之前 |
 | 60 | 事件格式版本不兼容时，`status` 本该退 9；但只要有别的命令先把读取进度（cursor）写下来，当前命令再 `status` 就返回 0——直接信了 cursor，没再检查事件格式版本。等于版本保护能被绕过 | 60 C 段：副本自己的 `wait` 读一次事件，再用当前命令 `status` | corral | **待修**。自检时就是 0，真 agent 复跑仍是 0，不是偶发。建议读 cursor 之后仍校验一次事件格式版本 |
-| 02 / 03 | Codex 正常退出（连按两次 Ctrl-C）的收尾时间波动大：03 用了 13.1 秒正常退出，02 跑过三轮后超过 20 秒，被 corral 升级到 SIGTERM（`exit_code: -15`）。M8 实测是 7.6 秒 | 起 Codex，跑几轮后 `corral stop` | corral | **已修** corral `48fb26a`：等待从 20 秒放宽到 60 秒（实测跑过三轮要 27.7 秒），`stop` 默认超时 30→90。2026-09-16 定量：刚起 13–15 秒、跑过三轮 27–28 秒，不是波动是随会话内容增长；「两次 Ctrl-C 间隔太快」的猜想已证伪。回归断言加在 `lab/steps/03-lifecycle/run.py`，尚未用真 Codex 跑过一次 |
+| 02 / 03 | Codex 正常退出（连按两次 Ctrl-C）的收尾时间波动大：03 用了 13.1 秒正常退出，02 跑过三轮后超过 20 秒，被 corral 升级到 SIGTERM（`exit_code: -15`）。M8 实测是 7.6 秒 | 起 Codex，跑几轮后 `corral stop` | corral | **已修** corral `48fb26a`：等待从 20 秒放宽到 60 秒（实测跑过三轮要 27.7 秒），`stop` 默认超时 30→90。2026-09-16 定量：刚起 13–15 秒、跑过三轮 27–28 秒，不是波动是随会话内容增长；「两次 Ctrl-C 间隔太快」的猜想已证伪。回归断言加在 `lab/steps/03-lifecycle/run.py`，2026-09-16 已用真 Codex 验过：25.6 秒、`stopped_by=keys`、`exit_code=0` |

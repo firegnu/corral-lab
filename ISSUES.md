@@ -121,7 +121,9 @@ quit_steps = ({"keys": CTRL_C, "wait": 0.3}, {"keys": CTRL_C, "wait": 20}, {"sig
 Codex 的记忆子 agent 会在收尾时改 `~/.codex/memories`，那段若走钩子就有信号），需要真 Codex 实验，暂时搁置。
 
 **回归检查**：`lab/steps/03-lifecycle/run.py` 里 Codex 改成先跑三轮再 stop，断言 `stopped_by=keys`、
-`exit_code=0`、用时 60 秒以内。**尚未用真 Codex 跑过一次**——跑一遍 03 要起好几个 Codex 会话，留到下次手工测试。
+`exit_code=0`、用时 60 秒以内。
+**2026-09-16 已用真 Codex 验过**：跑过三轮的会话 stop 用时 **25.6 秒**，`stopped_by=keys`、`exit_code=0`，正常收尾；
+同一场景在旧的 20 秒上限下必然被 SIGTERM 截断（`exit_code: -15`）。03 的 16 项全 PASS。新阈值留了约 2.3 倍余量。
 
 ### 4. 写脚本必踩的两个坑　——　**已写进 `AGENT_USAGE.md`（corral `48fb26a`）**
 
