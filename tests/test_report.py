@@ -2,6 +2,7 @@ import contextlib
 import io
 import os
 import unittest
+from decimal import Decimal
 
 from ledger import cli, report
 
@@ -10,12 +11,26 @@ SAMPLE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 class ReportTest(unittest.TestCase):
     def test_sorted_with_total(self):
-        lines = report.format_report({"rent": 1800.0, "bank": -12.5}).splitlines()
+        lines = report.format_report({"rent": Decimal("1800.0"), "bank": Decimal("-12.5")}).splitlines()
         self.assertEqual([line.split()[0] for line in lines], ["account", "bank", "rent", "TOTAL"])
         self.assertTrue(lines[-1].endswith("1,787.50"))
 
     def test_thousands_separator(self):
-        self.assertEqual(report.format_amount(1234567.891), "1,234,567.89")
+        self.assertEqual(report.format_amount(Decimal("1234567.891")), "1,234,567.89")
+
+    def test_negative_zero_is_normalized(self):
+        self.assertEqual(report.format_amount(Decimal("-0.00")), "0.00")
+
+    def test_small_negative_rounds_to_positive_zero(self):
+        self.assertEqual(report.format_amount(Decimal("-0.001")), "0.00")
+
+    def test_no_float_precision_artifacts(self):
+        self.assertEqual(report.format_amount(Decimal("0.1") + Decimal("0.2")), "0.30")
+
+    def test_format_report_empty_total_has_no_negative_zero(self):
+        lines = report.format_report({}).splitlines()
+        self.assertTrue(lines[-1].endswith("0.00"))
+        self.assertNotIn("-0.00", lines[-1])
 
 
 class CliTest(unittest.TestCase):
