@@ -51,6 +51,16 @@ class CliTest(unittest.TestCase):
         self.assertIn("food:groceries", text)
         self.assertIn("TOTAL", text)
 
+    def test_report_with_account_prefix(self):
+        text = self.run_cli("report", SAMPLE, "--account-prefix", "food:")
+        lines = text.splitlines()
+        amounts = {account.strip(): amount for account, amount in (line.rsplit(maxsplit=1) for line in lines[1:])}
+        self.assertEqual(amounts, {
+            "food:dining": "0.30",
+            "food:groceries": "178.55",
+            "TOTAL": "178.85",
+        })
+
     def test_balance_on_sample(self):
         self.assertEqual(self.run_cli("balance", SAMPLE, "rent").strip(), "1,800.00")
 

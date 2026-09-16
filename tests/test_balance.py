@@ -43,6 +43,14 @@ class BalanceTest(unittest.TestCase):
     def test_balances_for_month_no_matches(self):
         self.assertEqual(balance.balances_for_month([tx("cash", Decimal("10"))], "2026-01"), {})
 
+    def test_filter_by_prefix(self):
+        totals = {"food:groceries": Decimal("10"), "food:dining": Decimal("5"), "rent": Decimal("20")}
+        self.assertEqual(balance.filter_by_prefix(totals, "food:"),
+                         {"food:groceries": Decimal("10"), "food:dining": Decimal("5")})
+
+    def test_filter_by_prefix_no_matches(self):
+        self.assertEqual(balance.filter_by_prefix({"rent": Decimal("20")}, "food:"), {})
+
 
 if __name__ == "__main__":
     unittest.main()
