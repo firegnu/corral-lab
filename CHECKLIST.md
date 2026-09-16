@@ -935,11 +935,13 @@
 - **通过标准**：同期望。
 
 **记录**
-- confhash：
-- 手动删除：
-- 对话记录：☐ 删了　☐ 保留
-- 结果：☐ 通过　☐ 不通过
-- 备注：
+- confhash：cleanup 第 5 步报「只多了信任记录」——`~/.codex/config.toml` 里 corral-lab 那一段；`~/.claude/settings.json`、`~/.codex/hooks.json`、两份 SKILL.md 都未变。
+- 手动删除：已删 `~/.codex/config.toml` 第 223–225 行（corral-lab 的 `[projects…]` + `trust_level` + 空行），删后 TOML 解析正常、其余 68 个 projects 和 mcp_servers 原样。备份在会话 scratchpad 的 `config.toml.bak`。`~/.claude.json` 里 corral-lab 的 projects 键**没删**（corral-lab 是自己的仓库，还要继续用；要删得先退出所有 Claude Code）。
+- 对话记录：☐ 删了　☑ 保留
+- 结果：☑ 通过　☐ 不通过
+- 备注：2026-09-16 12:15 左右。`corral ls` 空、`~/.corral` 已删、`/tmp/clab` 已删、三个 worktree 和 `lab/` 分支都已移除。
+  - 没做 `git reset --hard lab-baseline`——那会连这份测试记录一起丢掉。ledger 的提交和 CHECKLIST 记录都留在 main 上。
+  - confhash 的基线存在 `/tmp/clab/confhash.json`，被第 6 步连着删了，所以删完信任记录没法再用 confhash 复验，改成直接校验 TOML + diff 备份。**下次应该把基线存到 `/tmp/clab` 外面，或者把「删信任记录」挪到删 `/tmp/clab` 之前。**
 
 ---
 
@@ -951,4 +953,5 @@
 | 12 | 人在输入框里留着没提交的草稿时，`send` 的文字接在草稿后面一起被提交：agent 收到的是拼接后的内容并照做，corral 却因文字对不上报 `not_delivered`（退出码 3）。调用方以为没送到，重试就会送第二遍 | 在接入窗口里打几个字不提交，静置 30 秒后 `corral send` | corral（待定） | 先记录。可选做法：文档里写明这是退出码 3 的常见原因、要求人接入去看；或者讨论送之前要不要清输入框（会毁掉人的草稿） |
 | 50 | `corral keys` 打进去的按键被记成「人在打字」，紧接着的 `corral send` 被退回 8（human_active），要等静默窗口过去才能送 | `corral keys <name> enter` 答完权限框后立刻 `corral send` | corral（大概率是设计如此） | 先记录。脚本里用 `keys` 之后要按 8 重试，不能假设马上能 `send`。文档里值得写一句 |
 | 41 / 50 | 评审方只听 handoff 那句固定的话，request.md 里的额外要求（「findings 第一行照抄 token」「最后一行写 TODO」）会被忽略；把要求写得更硬才照做 | 在 request.md 里写一条和 handoff 那句话无关的要求 | agent | 不是 corral 的问题。lab 脚本这边：要验的东西得写进 handoff 送出的那句话，或者在 request.md 里写明「必须」 |
+| 99 | confhash 的基线存在 `/tmp/clab/confhash.json`，而 cleanup 第 6 步就把 `/tmp/clab` 删了，于是第 2 步手动删信任记录之后没法再用 confhash 复验 | 跑完 `lab/cleanup.py` 再 `lab/bin/confhash check` | lab 脚本 | 待改：基线存到 `/tmp/clab` 外面，或者把「删信任记录」放到删 `/tmp/clab` 之前 |
 | 02 / 03 | Codex 正常退出（连按两次 Ctrl-C）的收尾时间波动大：03 用了 13.1 秒正常退出，02 跑过三轮后超过 20 秒，被 corral 升级到 SIGTERM（`exit_code: -15`）。M8 实测是 7.6 秒 | 起 Codex，跑几轮后 `corral stop` | corral（待定） | 观察中：后面几步看是否重现。若常见，考虑把 Codex 的等待从 20 秒放宽，或先发一次 Ctrl-C 再判断 |
