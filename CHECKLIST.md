@@ -107,11 +107,11 @@
 - **清理**：无。基线要重记：`lab/bin/confhash save --force`。
 
 **记录**
-- 日期：
-- corral 提交：
-- Claude Code 版本：　　　Codex 版本：
-- 结果：☐ 通过　☐ 不通过
-- 备注：
+- 日期：2026-09-16
+- corral 提交：7eca959
+- Claude Code 版本：2.1.273　　　Codex 版本：0.154.0
+- 结果：☑ 通过　☐ 不通过
+- 备注：全部 PASS。基线指纹记在 /tmp/clab/confhash.json：settings.json 98348bb0bbe0、config.toml 90cf47c6f6a0、hooks.json 5deaab7cb308、两处 SKILL.md 均 bdefc57587fe。（M8 时 Claude Code 是 2.1.272，现在 2.1.273）
 
 ## 01 工作目录与信任预热
 
@@ -147,16 +147,20 @@
 
 | 探针 | 目录 | 弹框？ | 选了什么 | 之后状态 |
 |---|---|---|---|---|
-| lab/probe-cc-main | 仓库 | | | |
-| lab/probe-cx-main | 仓库 | | | |
-| lab/probe-cc-a-review | wt-lab-a-review | | | |
-| lab/probe-cx-a-review | wt-lab-a-review | | | |
-| lab/probe-cc-b | wt-lab-b | | | |
-| lab/probe-cx-b-review | wt-lab-b-review | | | |
+| lab/probe-cc-main | 仓库 | 是 | 信任 | idle |
+| lab/probe-cx-main | 仓库 | 是 | continue | starting（正常）|
+| lab/probe-cc-a-review | wt-lab-a-review | 是 | 信任 | idle |
+| lab/probe-cx-a-review | wt-lab-a-review | 是 | continue | starting（正常）|
+| lab/probe-cc-b | wt-lab-b | 是 | 信任 | idle |
+| lab/probe-cx-b-review | wt-lab-b-review | 是 | continue | starting（正常）|
 
-- 新增信任记录：
-- 结果：☐ 通过　☐ 不通过
+- 新增信任记录：只有 Codex 的 `[projects."/Users/firegnu/Developer/personal_projs/corral-lab"]`（trust_level = "trusted"）。三个 worktree 没有各自的记录。
+- 结果：☑ 通过　☐ 不通过
 - 备注：
+  - Codex 的信任按主仓库根目录算：停掉 wt-lab-a-review 的 Codex 探针再重开，不再弹框。后面在 worktree 里起 Codex 不会卡在信任框。
+  - 在 lab/probe-cx-main 里误输入了 `/exit`，agent 自己退出；`corral status` 报退出码 2，`exited` 是 `{"code": 0, "stop_step": null}`，符合设计。重开后不再弹信任框，说明「continue」已经把信任记下了。
+  - `confhash check` 一开始报「变了」而不是「只多了信任记录」：是 lab/bin/confhash 去掉信任段时多删了一个空行（已修）。修后报「只多了信任记录」，退出码 0。
+  - 6 个探针 clean.sh 全部 stop 成功（Claude 走 SIGHUP，Codex 走 keys），`corral ls` 为空。
 
 ## 02 送话逐字送达
 
@@ -177,10 +181,12 @@
 - **清理**：`run.py` 自己 stop；中途打断时 `clean.sh`。
 
 **记录**
-- Claude Code：首句 ☐ 送达　代码块 ☐ 送达（latency　）　问号开头 ☐ 送达；复述差异：
-- Codex：首句 ☐ 送达　代码块 ☐ 送达（latency　）　问号开头 ☐ 送达；复述差异：
-- 结果：☐ 通过　☐ 不通过
+- Claude Code（haiku）：首句 ☑ 送达　代码块 ☑ 送达（latency 0.404）　问号开头 ☑ 送达；复述差异：无，diff 文件 0 字节
+- Codex（luna low）：首句 ☑ 送达　代码块 ☑ 送达（latency 0.512）　问号开头 ☑ 送达；复述差异：无，diff 文件 0 字节
+- 结果：☑ 通过　☐ 不通过
 - 备注：
+  - 三轮的 `last_input_source` 都是 `send`；问号开头那一行两家都回「收到问号」，没有被界面当成快捷键。
+  - 观察：Codex 这次 `stop` 落到 SIGTERM（`exit_code: -15`），不是 M8 的正常退出（`keys`，7.6 秒收尾）。01 里没提交过话的 Codex 探针 stop 走的是 `keys`。跑过几轮之后是不是就退不动，见 03。
 
 ## 03 生命周期与故障【故障演练】
 
@@ -204,11 +210,14 @@
 - **清理**：`run.py` 自己清；中途打断时 `clean.sh`。【白盒】从 meta.json 取栏位进程号。
 
 **记录**
-- Codex stop：用时　　　stopped_by　　　exit_code
-- 栏位被杀后 agent：☐ 也退出了　☐ 残留
-- Claude 被杀后 exited：
-- 结果：☐ 通过　☐ 不通过
+- Codex stop：用时 13.1s　　　stopped_by=keys　　　exit_code=0
+- 栏位被杀后 agent：☑ 也退出了　☐ 残留
+- Claude 被杀后 exited：`{"instance": "219de3eeb694", "code": -9, "stop_step": null}`
+- 结果：☑ 通过　☐ 不通过
 - 备注：
+  - 同名重复 start 得到 5；stop 后立刻同名 start 不撞锁；kill -9 栏位后 `ls` 清残留、能重新 start；两次 Codex stop 都是 `keys` 正常退出。
+  - Claude stop `stopped_by=SIGHUP`、`exit_code=-1`，符合设计。
+  - Codex 收尾 13.1 秒，比 M8 实测的 7.6 秒长；02 那次更是超过 20 秒落到 SIGTERM。corral 等 20 秒升级信号，余量偏紧，见「发现的问题」。
 
 ## 04 沙箱里被拒【故障演练】
 
@@ -226,9 +235,9 @@
 - **清理**：无。
 
 **记录**
-- 真沙箱 message：
-- 结果：☐ 通过　☐ 不通过
-- 备注：
+- 真沙箱 message：`running inside a Codex sandbox: agents started here would be sandboxed too, and running agents cannot be reached; start the caller without the sandbox (e.g. codex --yolo)`
+- 结果：☑ 通过　☐ 不通过
+- 备注：12 个命令都得到退出码 6，`guide` 和 `--version` 得到 0；`codex sandbox -P :workspace` 里 `corral ls` 也得到 6。
 
 ---
 
@@ -902,4 +911,5 @@
 
 | 步骤 | 现象 | 复现方式 | 属于 corral / lab 脚本 / agent | 处理 |
 |---|---|---|---|---|
-| | | | | |
+| 01 | `confhash check` 把「只多了 Codex 信任记录」误报成「变了」 | 点信任后运行 `lab/bin/confhash check` | lab 脚本 | 已修：去掉信任段时不再连段前的空行一起删 |
+| 02 / 03 | Codex 正常退出（连按两次 Ctrl-C）的收尾时间波动大：03 用了 13.1 秒正常退出，02 跑过三轮后超过 20 秒，被 corral 升级到 SIGTERM（`exit_code: -15`）。M8 实测是 7.6 秒 | 起 Codex，跑几轮后 `corral stop` | corral（待定） | 观察中：后面几步看是否重现。若常见，考虑把 Codex 的等待从 20 秒放宽，或先发一次 Ctrl-C 再判断 |

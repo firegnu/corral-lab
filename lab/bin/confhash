@@ -41,14 +41,12 @@ def projects(data):
 
 
 def without_projects(data, drop):
-    """去掉 drop 里这些目录的 [projects."…"] 段（到下一个 [ 开头的行为止），连同段前的一个空行。"""
+    """去掉 drop 里这些目录的 [projects."…"] 段：从段标题到下一个 [ 开头的行之前，包含段尾的空行。"""
     out, skipping = [], False
     for line in data.decode("utf-8", "replace").splitlines(keepends=True):
         m = PROJECT_RE.match(line.rstrip("\n"))
         if m:
             skipping = m.group(1).strip("\"'") in drop
-            if skipping and out and not out[-1].strip():
-                out.pop()
         elif line.startswith("["):
             skipping = False
         if not skipping:
