@@ -20,6 +20,20 @@ class ParseTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse.parse_lines(["2026-08-01,cash"])
 
+    def test_blank_and_whitespace_lines_are_skipped(self):
+        txs = parse.parse_lines([
+            "date,account,amount,memo",
+            "",
+            "2026-08-01,cash,12.50,coffee",
+            "   ",
+            "2026-08-02,bank,-3.25,x",
+            "\n",
+        ])
+        self.assertEqual(txs, [
+            parse.Transaction("2026-08-01", "cash", 12.5, "coffee"),
+            parse.Transaction("2026-08-02", "bank", -3.25, "x"),
+        ])
+
 
 if __name__ == "__main__":
     unittest.main()

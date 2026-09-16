@@ -23,9 +23,14 @@ def parse_row(row):
 
 def parse_lines(lines):
     transactions = []
-    for i, row in enumerate(csv.reader(lines)):
-        if i == 0 and [cell.strip().lower() for cell in row[:4]] == HEADER[:len(row[:4])]:
+    seen_row = False
+    for row in csv.reader(lines):
+        if not any(cell.strip() for cell in row):
             continue
+        if not seen_row:
+            seen_row = True
+            if [cell.strip().lower() for cell in row[:4]] == HEADER[:len(row[:4])]:
+                continue
         transactions.append(parse_row(row))
     return transactions
 
