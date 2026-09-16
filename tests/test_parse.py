@@ -48,6 +48,15 @@ class ParseTest(unittest.TestCase):
             parse.Transaction("2026-08-02", "bank", Decimal("-3.25"), "x"),
         ])
 
+    def test_comma_only_rows_are_skipped(self):
+        txs = parse.parse_lines([
+            "date,account,amount,memo",
+            ",,",
+            " , , ",
+            "2026-08-01,cash,12.50,coffee",
+        ])
+        self.assertEqual(txs, [parse.Transaction("2026-08-01", "cash", Decimal("12.50"), "coffee")])
+
     def test_header_is_recognized_after_leading_blank_lines(self):
         txs = parse.parse_lines([
             "",
