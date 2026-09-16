@@ -206,6 +206,7 @@
 - **操作步骤**：`lab/steps/03-lifecycle/run.py`
 - **期望看到什么**【自动】：
   - 全部 PASS。
+  - **回归检查（ISSUES 第 3 条）**：Codex 会先跑三轮再 stop，必须是 `stopped_by=keys`、`exit_code=0`、用时 60 秒以内——旧的 20 秒上限会把收尾截断成 SIGTERM（`exit_code: -15`）。corral `48fb26a` 放宽到 60 秒。
   - Codex stop 以 `keys` 结束、退出码 0，用时 10 秒左右。
   - 「记录」行写明栏位被杀后 agent 进程有没有残留。
 - **要记录什么**：Codex stop 用时和 `stopped_by`；栏位被杀后 agent 是否成了孤儿进程；Claude 被杀后的 `exited`。
@@ -333,9 +334,10 @@
     - 每 5 秒重试一次，不重复打印；
     - 最后一次按键约 30 秒后 `delivered`；
     - 鼠标划过窗口不会推迟送达。
-  - B：没有预设结果。可能是草稿和送的话拼成一句被提交，corral 对不上文字，报「没确认送达」（wake 退出码 4）。
-- **要记录什么**：A 从按键到送达的秒数；B 的 wake 输出、dev 实际收到的话、dev 输入框里的样子。
-- **通过标准**：A 满足期望。B 只记录，不影响通过；如果确认是设计缺口，记到最后的「发现的问题」里。
+  - B：**已经不是记录项了**。corral `48fb26a` 修了这个缺口：识别出「送出的文字是这条输入的一部分」，判为送达，退 0 并标 `merged_with_draft: true`，不再让调用方重送。
+    现在跑 `lab/steps/12-typing/draftcheck.py` 自动验（它自己起一次性 agent，用 `corral keys` 种草稿，不打扰 `lab-a/dev`）。
+- **要记录什么**：A 从按键到送达的秒数；B 的 `draftcheck.py` 结果。
+- **通过标准**：A 满足期望【人看】；B 的 `draftcheck.py` 全部 PASS【自动】。
 - **清理**：确认 dev 输入框里没有残留的字。
 
 **记录**
@@ -345,6 +347,7 @@
 - 备注：
   - A 段：第一次尝试就被 `human_active` 拒绝，带最后一次按键时间；每 5 秒重试，重复的不刷屏。
   - B 段确认了设计缺口：人留着没提交的草稿时，send 的文字接在草稿后面一起提交，corral 因文字对不上报 `not_delivered`，但 agent 其实已经收到并执行了——调用方看到的是「假阴性」，若重试会送第二遍。见「发现的问题」。
+  - **2026-09-16 已修**（corral `48fb26a`）：新增 `lab/steps/12-typing/draftcheck.py`，实测六项全 PASS——草稿种进去不算人在打字、送话退 0、`merged_with_draft=True`、agent 回了「收到」。同样的场景修复前是退出码 3。
 
 ## 13 实例编号变了不送
 
@@ -686,7 +689,7 @@
 - Claude（`lab-a/review-cc`）：Esc → interrupted **21.5** 秒；dev 被叫醒：☑ 否
 - Codex（`lab-a/review`）：Esc → undelivered **0.9** 秒；last_event：**Interrupt**　dev 被叫醒：☑ 是（Esc 后 1.5 秒）
 - 结果：☑ 通过　☐ 不通过
-- 备注：2026-09-16 第一次人工跑过并确认通过，但秒数没记；同日环境清掉后由 Claude 全自动重跑一遍取准确数据（Esc 用 `corral keys <名字> esc` 发，钩子把它记成人在打字，和手按走同一条路）。
+- 备注：2026-09-16 第一次人工跑过并确认通过，但秒数没记；同日环境清掉后由 Claude 全自动重跑一遍取准确数据（Esc 用 `corral keys <名字> esc` 发。**更正**：我当时说「钩子把它记成人在打字，和手按走同一条路」是错的——`keys` 不经过 `last_human_input` 的判定，见问题表第 50 条。等价性成立的真正理由是**同样的字节进同一个伪终端**，agent 侧的反应完全一样，这一步验的判定也只取决于 agent 侧。唯一的差别：真人按 Esc 会额外留下 `last_human_input`，watcher 随后叫醒 A 时可能吃一次 8 再重试；自动重跑这次没有这个环节。)
   - A 段：`idle_for` 20.076 触发判定，`last_event` 仍是 `PostToolUse`——**Claude 被 Esc 打断确实不产生任何事件**，只能靠 `wait --quiet` 的静默超时兜底，所以慢（21.5 秒）。判 `interrupted`，不叫醒 A。
   - B 段：**Codex 有 `Interrupt` 事件**，所以 0.9 秒就判出来了，原因是「findings.md 不存在」，判 `undelivered` 并叫醒 dev 告知没交付。这也正是 41 想验而没验到的那条分支。
   - 两段差 24 倍，是这一步最值得记的结论：**有事件的 agent 能立刻判定，没事件的只能等静默超时。**
@@ -955,9 +958,9 @@
 | 步骤 | 现象 | 复现方式 | 属于 corral / lab 脚本 / agent | 处理 |
 |---|---|---|---|---|
 | 01 | `confhash check` 把「只多了 Codex 信任记录」误报成「变了」 | 点信任后运行 `lab/bin/confhash check` | lab 脚本 | 已修：去掉信任段时不再连段前的空行一起删 |
-| 12 | 人在输入框里留着没提交的草稿时，`send` 的文字接在草稿后面一起被提交：agent 收到的是拼接后的内容并照做，corral 却因文字对不上报 `not_delivered`（退出码 3）。调用方以为没送到，重试就会送第二遍 | 在接入窗口里打几个字不提交，静置 30 秒后 `corral send` | corral（待定） | 先记录。可选做法：文档里写明这是退出码 3 的常见原因、要求人接入去看；或者讨论送之前要不要清输入框（会毁掉人的草稿） |
-| 50 | `corral keys` 打进去的按键被记成「人在打字」，紧接着的 `corral send` 被退回 8（human_active），要等静默窗口过去才能送 | `corral keys <name> enter` 答完权限框后立刻 `corral send` | corral（大概率是设计如此） | 先记录。脚本里用 `keys` 之后要按 8 重试，不能假设马上能 `send`。文档里值得写一句 |
+| 12 | 人在输入框里留着没提交的草稿时，`send` 的文字接在草稿后面一起被提交：agent 收到的是拼接后的内容并照做，corral 却因文字对不上报 `not_delivered`（退出码 3）。调用方以为没送到，重试就会送第二遍 | 在接入窗口里打几个字不提交，静置 30 秒后 `corral send` | corral | **已修** corral `48fb26a`：识别「送出的文字是这条输入的一部分」，判送达并标 `merged_with_draft: true`。回归检查 `lab/steps/12-typing/draftcheck.py`，实测全 PASS 
+| 50 | ~~`corral keys` 打进去的按键被记成「人在打字」，紧接着的 `send` 被退回 8~~　**这条记错了，已更正**：实测 `attached=0` 时 `keys` 之后 `last_human_input` 仍是 `None`、`send` 退 0。当时那个 8 是真的，但来自窗口 7 里人的实际操作（那个窗口正 attach 着），不是 `keys` 造成的 | 对照实验：起一个不接入的 agent，`corral keys text:hello` 后立刻 `send` | 无（我的误判） | 已在 ISSUES 第 4 条写明更正和教训：两件事挨在一起不等于有因果。真正要注意的是 `keys` 之后 agent 要过一会儿才反应，`send` 可能退 7，先 status/wait 再送 |
 | 41 / 50 | 评审方只听 handoff 那句固定的话，request.md 里的额外要求（「findings 第一行照抄 token」「最后一行写 TODO」）会被忽略；把要求写得更硬才照做 | 在 request.md 里写一条和 handoff 那句话无关的要求 | agent | 不是 corral 的问题。lab 脚本这边：要验的东西得写进 handoff 送出的那句话，或者在 request.md 里写明「必须」 |
 | 99 | confhash 的基线存在 `/tmp/clab/confhash.json`，而 cleanup 第 6 步就把 `/tmp/clab` 删了，于是第 2 步手动删信任记录之后没法再用 confhash 复验 | 跑完 `lab/cleanup.py` 再 `lab/bin/confhash check` | lab 脚本 | 待改：基线存到 `/tmp/clab` 外面，或者把「删信任记录」放到删 `/tmp/clab` 之前 |
 | 60 | 事件格式版本不兼容时，`status` 本该退 9；但只要有别的命令先把读取进度（cursor）写下来，当前命令再 `status` 就返回 0——直接信了 cursor，没再检查事件格式版本。等于版本保护能被绕过 | 60 C 段：副本自己的 `wait` 读一次事件，再用当前命令 `status` | corral | **待修**。自检时就是 0，真 agent 复跑仍是 0，不是偶发。建议读 cursor 之后仍校验一次事件格式版本 |
-| 02 / 03 | Codex 正常退出（连按两次 Ctrl-C）的收尾时间波动大：03 用了 13.1 秒正常退出，02 跑过三轮后超过 20 秒，被 corral 升级到 SIGTERM（`exit_code: -15`）。M8 实测是 7.6 秒 | 起 Codex，跑几轮后 `corral stop` | corral（待定） | 观察中：后面几步看是否重现。若常见，考虑把 Codex 的等待从 20 秒放宽，或先发一次 Ctrl-C 再判断 |
+| 02 / 03 | Codex 正常退出（连按两次 Ctrl-C）的收尾时间波动大：03 用了 13.1 秒正常退出，02 跑过三轮后超过 20 秒，被 corral 升级到 SIGTERM（`exit_code: -15`）。M8 实测是 7.6 秒 | 起 Codex，跑几轮后 `corral stop` | corral | **已修** corral `48fb26a`：等待从 20 秒放宽到 60 秒（实测跑过三轮要 27.7 秒），`stop` 默认超时 30→90。2026-09-16 定量：刚起 13–15 秒、跑过三轮 27–28 秒，不是波动是随会话内容增长；「两次 Ctrl-C 间隔太快」的猜想已证伪。回归断言加在 `lab/steps/03-lifecycle/run.py`，尚未用真 Codex 跑过一次 |

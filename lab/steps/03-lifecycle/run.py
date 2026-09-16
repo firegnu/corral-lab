@@ -41,11 +41,23 @@ def main():
         code, out = start(cx, "codex")
         checks.ok("同名再 start → 退出码 5", code == 5, f"退出码 {code} {out.get('error')}")
 
+        # 再跑两轮，让这是一个「用过的」会话：Codex 的收尾时间随会话内容增长
+        # （实测刚起 13–15 秒，跑过三轮 27.7 秒），ISSUES 第 3 条就是这么撞上旧的 20 秒上限的
+        for n in (2, 3):
+            L.corral("send", cx, f"只回复：第 {n} 句")
+            L.wait_done(cx, total=180)
+
         # stop 后立刻同名 start
         t0 = time.time()
-        code, out = L.corral("stop", cx, "--timeout", "45")
-        checks.ok("Codex stop", code == 0,
-                  f"用时 {time.time() - t0:.1f}s stopped_by={out.get('stopped_by')} exit_code={out.get('exit_code')}")
+        code, out = L.corral("stop", cx, "--timeout", "120")
+        took = time.time() - t0
+        detail = f"用时 {took:.1f}s stopped_by={out.get('stopped_by')} exit_code={out.get('exit_code')}"
+        checks.ok("Codex stop", code == 0, detail)
+        # 回归检查（ISSUES 第 3 条，corral 48fb26a 把等待从 20 秒放宽到 60 秒）：
+        # 跑过几轮的 Codex 必须是自己正常退出，不能是等不及被 SIGTERM 杀掉
+        checks.ok("Codex stop 是正常收尾，不是被 SIGTERM 截断",
+                  out.get("stopped_by") == "keys" and out.get("exit_code") == 0, detail)
+        checks.ok("收尾用时在放宽后的 60 秒以内", took < 60, f"{took:.1f}s")
         code, out = start(cx, "codex")
         checks.ok("stop 后立刻同名 start（不撞锁）", code == 0, out.get("error", ""))
 
@@ -65,7 +77,7 @@ def main():
             checks.note("栏位被杀后 agent 进程也退出了")
         code, out = start(cx, "codex")
         checks.ok("kill -9 栏位后同名重新 start", code == 0, out.get("error", ""))
-        code, out = L.corral("stop", cx, "--timeout", "45")
+        code, out = L.corral("stop", cx, "--timeout", "120")
         checks.ok("再 stop", code == 0, f"stopped_by={out.get('stopped_by')}")
 
         # kill -9 agent
@@ -81,12 +93,12 @@ def main():
                       str(exited))
             code, out = start(cc, "claude")
             checks.ok("同名重新 start", code == 0, out.get("error", ""))
-            code, out = L.corral("stop", cc, "--timeout", "45")
+            code, out = L.corral("stop", cc, "--timeout", "120")
             checks.ok("Claude Code stop", code == 0, f"stopped_by={out.get('stopped_by')} exit_code={out.get('exit_code')}")
     finally:
         for name in (cx, cc):
             if L.corral("status", name)[0] == 0:
-                L.corral("stop", name, "--timeout", "45")
+                L.corral("stop", name, "--timeout", "120")
     return checks.done()
 
 
