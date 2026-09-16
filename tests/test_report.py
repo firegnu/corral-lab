@@ -33,6 +33,16 @@ class CliTest(unittest.TestCase):
     def test_balance_on_sample(self):
         self.assertEqual(self.run_cli("balance", SAMPLE, "rent").strip(), "1,800.00")
 
+    def test_month_on_sample(self):
+        text = self.run_cli("month", SAMPLE, "2026-08")
+        self.assertIn("food:dining", text)
+        self.assertIn("TOTAL", text)
+
+    def test_month_excludes_other_months(self):
+        text = self.run_cli("month", SAMPLE, "2026-09")
+        self.assertNotIn("food:dining", text)
+        self.assertIn("food:groceries", text)
+
 
 if __name__ == "__main__":
     unittest.main()
