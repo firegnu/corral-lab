@@ -770,10 +770,13 @@
 - **清理**：`clean.sh`（stop `lab-b/*`）。
 
 **记录**
-- lab-a：第　轮　判定　　　lab-b：第　轮　判定
-- 串扰：
-- 结果：☐ 通过　☐ 不通过
-- 备注：
+- lab-a：第 10 轮　判定 delivered（送达 12:02:48 → 交付 12:03:45，57 秒）　　　lab-b：第 1、2 轮　判定都是 delivered（第 2 轮 12:07:05 → 12:07:41，36 秒）
+- 串扰：无。两边的 findings.md 都只含自己的 token，不含对方的；内容也完全不交叉（lab-a 通篇 `--account-prefix`，lab-b 通篇 B1 导出）；A/B 配对、叫醒对象都对。
+- 结果：☑ 通过　☐ 不通过
+- 备注：2026-09-16。四个 agent 同时活着（lab-a/dev sonnet、lab-a/review luna、lab-b/dev haiku、lab-b/review luna）。
+  - 这一步由 Claude 用 `corral send` 代替人在接入窗口打字驱动，看板显示是否正确【人看】这项没有人工确认，其余全部来自 `check.sh`。
+  - lab-b 第 1 轮 `findings.md 含 LAB-B-TOKEN` FAIL：评审方无视了 request.md 里「第一行原样抄写 token」这句（lab-a 的评审方照做了）。第 2 轮把要求写硬（「这是路由校验探针，必须照抄」）后就照做，全部 PASS。和 41 是同一类现象，不是 corral 的路由问题。
+  - 第 2 轮自然跑出完整重试链：`wake_a_not_idle`（A 正忙，7）→ `wake_a_human_active`（人在窗口 7 敲字，8）→ 72 秒后 `wake_a_delivered`。
 
 ---
 
@@ -946,4 +949,6 @@
 |---|---|---|---|---|
 | 01 | `confhash check` 把「只多了 Codex 信任记录」误报成「变了」 | 点信任后运行 `lab/bin/confhash check` | lab 脚本 | 已修：去掉信任段时不再连段前的空行一起删 |
 | 12 | 人在输入框里留着没提交的草稿时，`send` 的文字接在草稿后面一起被提交：agent 收到的是拼接后的内容并照做，corral 却因文字对不上报 `not_delivered`（退出码 3）。调用方以为没送到，重试就会送第二遍 | 在接入窗口里打几个字不提交，静置 30 秒后 `corral send` | corral（待定） | 先记录。可选做法：文档里写明这是退出码 3 的常见原因、要求人接入去看；或者讨论送之前要不要清输入框（会毁掉人的草稿） |
+| 50 | `corral keys` 打进去的按键被记成「人在打字」，紧接着的 `corral send` 被退回 8（human_active），要等静默窗口过去才能送 | `corral keys <name> enter` 答完权限框后立刻 `corral send` | corral（大概率是设计如此） | 先记录。脚本里用 `keys` 之后要按 8 重试，不能假设马上能 `send`。文档里值得写一句 |
+| 41 / 50 | 评审方只听 handoff 那句固定的话，request.md 里的额外要求（「findings 第一行照抄 token」「最后一行写 TODO」）会被忽略；把要求写得更硬才照做 | 在 request.md 里写一条和 handoff 那句话无关的要求 | agent | 不是 corral 的问题。lab 脚本这边：要验的东西得写进 handoff 送出的那句话，或者在 request.md 里写明「必须」 |
 | 02 / 03 | Codex 正常退出（连按两次 Ctrl-C）的收尾时间波动大：03 用了 13.1 秒正常退出，02 跑过三轮后超过 20 秒，被 corral 升级到 SIGTERM（`exit_code: -15`）。M8 实测是 7.6 秒 | 起 Codex，跑几轮后 `corral stop` | corral（待定） | 观察中：后面几步看是否重现。若常见，考虑把 Codex 的等待从 20 秒放宽，或先发一次 Ctrl-C 再判断 |
