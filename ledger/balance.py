@@ -15,7 +15,7 @@ def total(transactions):
 
 
 def balances_for_month(transactions, month):
-    return balances(t for t in transactions if t.date.startswith(month))
+    return balances(t for t in transactions if t.date[:7] == month)
 
 
 def filter_by_prefix(balances, prefix):

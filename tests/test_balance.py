@@ -43,6 +43,10 @@ class BalanceTest(unittest.TestCase):
     def test_balances_for_month_no_matches(self):
         self.assertEqual(balance.balances_for_month([tx("cash", Decimal("10"))], "2026-01"), {})
 
+    def test_balances_for_month_non_padded_month_does_not_match_other_months(self):
+        transactions = [tx("cash", Decimal("10"), date="2026-10-05"), tx("cash", Decimal("20"), date="2026-01-05")]
+        self.assertEqual(balance.balances_for_month(transactions, "2026-1"), {})
+
     def test_filter_by_prefix(self):
         totals = {"food:groceries": Decimal("10"), "food:dining": Decimal("5"), "rent": Decimal("20")}
         self.assertEqual(balance.filter_by_prefix(totals, "food:"),
