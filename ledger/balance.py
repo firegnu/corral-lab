@@ -11,3 +11,7 @@ def balances(transactions):
 
 def total(transactions):
     return sum(t.amount for t in transactions)
+
+
+def balances_for_month(transactions, month):
+    return balances(t for t in transactions if t.date.startswith(month))
