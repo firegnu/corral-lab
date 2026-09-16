@@ -17,6 +17,11 @@ class BalanceTest(unittest.TestCase):
     def test_empty(self):
         self.assertEqual(balance.balances([]), {})
         self.assertEqual(balance.total([]), Decimal("0"))
+        self.assertIsInstance(balance.total([]), Decimal)
+
+    def test_balances_values_are_decimal(self):
+        result = balance.balances([tx("cash", Decimal("10"))])
+        self.assertIsInstance(result["cash"], Decimal)
 
     def test_total(self):
         self.assertEqual(balance.total([tx("cash", Decimal("10")), tx("bank", Decimal("-4"))]), Decimal("6"))

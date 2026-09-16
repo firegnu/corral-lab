@@ -1,7 +1,7 @@
 """读交易记录 CSV。列：date,account,amount,memo（memo 可省略），第一行可以是表头。"""
 import csv
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 HEADER = ["date", "account", "amount", "memo"]
 
@@ -19,7 +19,11 @@ def parse_row(row):
         raise ValueError(f"expected at least 3 columns, got {len(row)}: {row!r}")
     date, account, amount = (cell.strip() for cell in row[:3])
     memo = row[3].strip() if len(row) > 3 else ""
-    return Transaction(date, account, Decimal(amount), memo)
+    try:
+        amount = Decimal(amount)
+    except InvalidOperation:
+        raise ValueError(f"invalid amount: {amount!r}") from None
+    return Transaction(date, account, amount, memo)
 
 
 def parse_lines(lines):

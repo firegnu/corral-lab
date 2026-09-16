@@ -27,6 +27,12 @@ class ReportTest(unittest.TestCase):
     def test_no_float_precision_artifacts(self):
         self.assertEqual(report.format_amount(Decimal("0.1") + Decimal("0.2")), "0.30")
 
+    def test_amount_without_decimal_point(self):
+        self.assertEqual(report.format_amount(Decimal("1800")), "1,800.00")
+
+    def test_large_realistic_amount(self):
+        self.assertEqual(report.format_amount(Decimal("999999999.99")), "999,999,999.99")
+
     def test_format_report_empty_total_has_no_negative_zero(self):
         lines = report.format_report({}).splitlines()
         self.assertTrue(lines[-1].endswith("0.00"))

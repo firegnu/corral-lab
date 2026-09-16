@@ -20,6 +20,11 @@ class ParseTest(unittest.TestCase):
     def test_memo_is_optional(self):
         [tx] = parse.parse_lines(["2026-08-01,rent,1800"])
         self.assertEqual(tx.memo, "")
+        self.assertEqual(tx.amount, Decimal("1800"))
+
+    def test_invalid_amount_raises_value_error(self):
+        with self.assertRaises(ValueError):
+            parse.parse_lines(["2026-08-01,cash,not-a-number"])
 
     def test_cells_are_stripped(self):
         [tx] = parse.parse_lines(["2026-08-01 , bank , -3.25 , x "])
