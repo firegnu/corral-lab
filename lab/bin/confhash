@@ -2,7 +2,7 @@
 """全局配置指纹：save 记下基线，check 比对。只存哈希和 Codex 信任记录的目录名，不复制文件内容。
 
 用法：lab/bin/confhash save [--force] | check
-- 基线存在 $LAB_TMP/confhash.json；save 时基线已存在就不覆盖（加 --force 才覆盖）
+- 基线存在 lab/.confhash.json（不进版本库）；save 时基线已存在就不覆盖（加 --force 才覆盖）
 - check：每个文件 未变 / 变了；~/.codex/config.toml 变了时，去掉新增的 [projects."…"] 段再比，
   一致就报「只多了信任记录」（这是真 agent 在新目录点「信任」的预期结果，需要人手动删）
 退出码：0 都没变（或只多了信任记录）；1 有别的变化
@@ -19,7 +19,7 @@ FILES = ("~/.claude/settings.json", "~/.codex/config.toml", "~/.codex/hooks.json
          "~/.claude/skills/corral/SKILL.md", "~/.agents/skills/corral/SKILL.md")
 CODEX_CONFIG = "~/.codex/config.toml"
 PROJECT_RE = re.compile(r'^\[projects\.("[^"]*"|\'[^\']*\')\]\s*$')
-BASELINE = os.path.join(L.TMP, "confhash.json")
+BASELINE = L.CONFHASH
 
 
 def read(path):

@@ -946,7 +946,7 @@
 - 结果：☑ 通过　☐ 不通过
 - 备注：2026-09-16 12:15 左右。`corral ls` 空、`~/.corral` 已删、`/tmp/clab` 已删、三个 worktree 和 `lab/` 分支都已移除。
   - 没做 `git reset --hard lab-baseline`——那会连这份测试记录一起丢掉。ledger 的提交和 CHECKLIST 记录都留在 main 上。
-  - confhash 的基线存在 `/tmp/clab/confhash.json`，被第 6 步连着删了，所以删完信任记录没法再用 confhash 复验，改成直接校验 TOML + diff 备份。**下次应该把基线存到 `/tmp/clab` 外面，或者把「删信任记录」挪到删 `/tmp/clab` 之前。**
+  - confhash 的基线存在 `/tmp/clab/confhash.json`，被第 6 步连着删了，所以删完信任记录没法再用 confhash 复验，改成直接校验 TOML + diff 备份。**下次应该把基线存到 `/tmp/clab` 外面，或者把「删信任记录」挪到删 `/tmp/clab` 之前。**（已改：基线改存 `lab/.confhash.json`，见 ISSUES 第 6 条）
 
 ---
 

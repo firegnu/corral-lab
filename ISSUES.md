@@ -105,9 +105,10 @@ DESIGN 5.4 补了那句跨版本 cursor 的规则。
 ### 5. lab 脚本：`confhash check` 误报　——　**已修**
 去掉 Codex 信任段时连段前的空行一起删了，导致「只多了信任记录」被报成「变了」。
 
-### 6. lab 脚本：confhash 基线放在 `/tmp/clab` 里，被 cleanup 自己删掉　——　**待改**
+### 6. lab 脚本：confhash 基线放在 `/tmp/clab` 里，被 cleanup 自己删掉　——　**已修**
 `cleanup.py` 第 6 步删 `/tmp/clab`，而基线就存在 `/tmp/clab/confhash.json`，于是第 2 步「手动删信任记录」之后没法再用 confhash 复验。
-改法：基线存到 `/tmp/clab` 外面，或者把「删信任记录」挪到删 `/tmp/clab` 之前。
+改法：基线挪出 `/tmp/clab`，改存 `lab/.confhash.json`（仓库里，已加进 `.gitignore`），路径集中定义在 `lablib.CONFHASH`，`confhash` 和 `cleanup.py` 都引它。
+复验跑的就是当初失败的那个场景：`save` → 删掉 `/tmp/clab` → 再 `check`，五项全部「未变」，退出码 0；`git status` 不会带上基线文件。
 
 ### 7. agent 行为：评审方只听 handoff 那句固定的话
 `request.md` 里的额外要求（「findings 第一行照抄 token」「最后一行写 TODO」）会被忽略，把要求写硬了才照做。

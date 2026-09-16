@@ -109,7 +109,10 @@ def main():
             code, w = L.wait_done("lab/compat-e2", total=60, exe=e2_exe)
             checks.ok("C 副本自己的 corral wait 能读", code == 0, f"result={w.get('result')}")
             code, st = L.corral("status", "lab/compat-e2")
-            checks.note("C 副本读过之后，当前命令再 status", f"退出码 {code}（0 表示直接用了副本写下的读取进度，没有再检查事件格式）")
+            # 曾经的洞：副本写下 cursor 之后，当前命令一行事件都读不到，就直接采信了副本算的快照（退 0）。
+            # corral f2409de 把格式检查补到 cursor 上，这里现在必须仍然是 9。
+            checks.ok("C 副本读过之后，当前命令再 status 仍然 → 9", code == 9,
+                      f"退出码 {code}{'（回归了：又在直接采信副本写下的读取进度）' if code == 0 else ''}")
             code, out = L.corral("stop", "lab/compat-e2", "--timeout", "45", exe=e2_exe)
             checks.ok("C 副本自己的 corral stop", code == 0, f"退出码 {code}")
     finally:

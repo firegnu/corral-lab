@@ -14,6 +14,9 @@ import time
 LAB = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TMP = os.environ.get("LAB_TMP", "/tmp/clab")
 RUN = os.path.join(TMP, "run")
+# 全局配置指纹的基线：放在仓库里，不能放 TMP——cleanup 会删掉整个 TMP，
+# 而删完之后还要用它复验「手动删掉信任记录后配置是否回到原样」。
+CONFHASH = os.path.join(LAB, "lab", ".confhash.json")
 LAB_NAME_RE = re.compile(r"^lab(-[A-Za-z0-9]+)?/")
 VERDICTS = ("delivered", "undelivered", "interrupted", "b_gone", "b_instance_changed", "wait_unknown")
 

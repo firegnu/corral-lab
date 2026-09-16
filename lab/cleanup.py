@@ -150,7 +150,7 @@ def main():
     step("4. 移除 worktree 和 lab/ 分支")
     remove_worktrees()
     step("5. 全局配置指纹")
-    if os.path.exists(os.path.join(L.TMP, "confhash.json")):
+    if os.path.exists(L.CONFHASH):
         subprocess.run([sys.executable, os.path.join(BIN, "confhash"), "check"])
     else:
         print("  没有基线（没做过准备步骤 00），跳过")
