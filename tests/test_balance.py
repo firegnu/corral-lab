@@ -51,6 +51,10 @@ class BalanceTest(unittest.TestCase):
     def test_filter_by_prefix_no_matches(self):
         self.assertEqual(balance.filter_by_prefix({"rent": Decimal("20")}, "food:"), {})
 
+    def test_filter_by_prefix_empty_prefix_matches_everything(self):
+        totals = {"food:groceries": Decimal("10"), "rent": Decimal("20")}
+        self.assertEqual(balance.filter_by_prefix(totals, ""), totals)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -61,6 +61,12 @@ class CliTest(unittest.TestCase):
             "TOTAL": "178.85",
         })
 
+    def test_report_with_account_prefix_no_matches(self):
+        text = self.run_cli("report", SAMPLE, "--account-prefix", "zzz")
+        lines = text.strip().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[-1].split()[-1], "0.00")
+
     def test_balance_on_sample(self):
         self.assertEqual(self.run_cli("balance", SAMPLE, "rent").strip(), "1,800.00")
 
